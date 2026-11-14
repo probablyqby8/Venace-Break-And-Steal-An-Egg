@@ -1,8 +1,7 @@
 --==============================================================
---   VENACE HUB  •  Pickaxe Edition  (UNIVERSAL)
+--   VENACE HUB  •  BAT EDITION
 --   Toggle UI : LEFT ALT (rebindable in Settings)
---   Works in every game: uses Tool:Activate() + common
---   swing remote names. No game-specific dependencies.
+--   Autospams the BatHitRequest RemoteEvent.
 --==============================================================
 
 local Players           = game:GetService("Players")
@@ -14,11 +13,20 @@ local LocalPlayer = Players.LocalPlayer
 local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
 
 --==============================================================
+-- REMOTE SETUP
+--==============================================================
+-- We wait for the remote to ensure the script doesn't error on load
+local BatHitRequest = ReplicatedStorage:WaitForChild("BatHitRequest", 10)
+if not BatHitRequest then
+    warn("[Venace] BatHitRequest not found in ReplicatedStorage! The auto-swing may not work.")
+end
+
+--==============================================================
 -- CONFIG
 --==============================================================
 local DEFAULTS = {
-    FastSwing      = false,
-    SwingDelay     = 0.03,              -- seconds between swings
+    AutoBat        = false,
+    BatDelay       = 0.7,               -- Default to server cooldown to prevent kicks
     Keybind        = Enum.KeyCode.LeftAlt,
     UITransparency = 0,                 -- 0 = solid
 }
@@ -35,79 +43,6 @@ local Theme = {
     Sub     = Color3.fromRGB(148, 148, 168),
     Good    = Color3.fromRGB(74, 222, 128),
 }
-
---==============================================================
--- UNIVERSAL SWING ENGINE
--- Tries every common way to swing a tool so the script works
--- across unrelated games without any game-specific setup.
---==============================================================
-local CommonSwingRemotes = {
-    -- original (Mastery / pickaxe games)
-    "MasteryPickaxeSwing",
-    "PickaxeSwing",
-    "SwingPickaxe",
-    "PickaxeActivate",
-    "ActivatePickaxe",
-    "UsePickaxe",
-    "MinePickaxe",
-    -- generic
-    "Swing",
-    "Mine",
-    "Mining",
-    "Hit",
-    "UseTool",
-    "ToolActivate",
-}
-
-local cachedRemotes = {}
-local function refreshRemoteCache()
-    cachedRemotes = {}
-    for _, name in ipairs(CommonSwingRemotes) do
-        local found = ReplicatedStorage:FindFirstChild(name, true)
-        if found and (found:IsA("RemoteEvent") or found:IsA("RemoteFunction")) then
-            table.insert(cachedRemotes, found)
-        end
-    end
-end
-
--- Wait a moment for the game to load before caching
-task.wait(1)
-refreshRemoteCache()
-
-local function getEquippedTool()
-    local char = LocalPlayer.Character
-    if not char then return nil end
-    return char:FindFirstChildOfClass("Tool")
-end
-
-local function swingOnce()
-    local tool = getEquippedTool()
-    
-    if tool then
-        -- 1. Native tool activation (fires Tool.Activated)
-        pcall(function() tool:Activate() end)
-
-        -- 2. Look for remotes inside the tool itself
-        for _, d in ipairs(tool:GetDescendants()) do
-            if d:IsA("RemoteEvent") then
-                pcall(function() d:FireServer() end)
-            elseif d:IsA("RemoteFunction") then
-                pcall(function() d:InvokeServer() end)
-            end
-        end
-    end
-
-    -- 3. Fire known common swing remotes found in ReplicatedStorage
-    for _, remote in ipairs(cachedRemotes) do
-        if remote and remote.Parent then
-            if remote:IsA("RemoteEvent") then
-                pcall(function() remote:FireServer() end)
-            elseif remote:IsA("RemoteFunction") then
-                pcall(function() remote:InvokeServer() end)
-            end
-        end
-    end
-end
 
 --==============================================================
 -- HELPERS
@@ -178,7 +113,7 @@ new("TextLabel", {
     Size = UDim2.new(1, -120, 0, 12),
     BackgroundTransparency = 1,
     Font = Enum.Font.Gotham,
-    Text = "pickaxe edition  •  universal",
+    Text = "bat edition",
     TextSize = 10,
     TextColor3 = Theme.Sub,
     TextXAlignment = Enum.TextXAlignment.Left,
@@ -252,7 +187,6 @@ end
 
 local mainPage    = createPage(1)
 local settingsPage = createPage(2)
-local pages = { mainPage, settingsPage }
 
 --==============================================================
 -- WIDGETS
@@ -430,13 +364,13 @@ local function createSlider(parent, labelText, minV, maxV, defaultV, order, fmt,
 end
 
 --==============================================================
--- MAIN PAGE
+-- MAIN PAGE (BAT)
 --==============================================================
 new("TextLabel", {
     Size = UDim2.new(1, -24, 0, 20),
     BackgroundTransparency = 1,
     Font = Enum.Font.GothamBold,
-    Text = "Pickaxe Mastery",
+    Text = "Bat Controller",
     TextSize = 15,
     TextColor3 = Theme.Text,
     TextXAlignment = Enum.TextXAlignment.Left,
@@ -447,7 +381,7 @@ new("TextLabel", {
     Size = UDim2.new(1, -24, 0, 16),
     BackgroundTransparency = 1,
     Font = Enum.Font.Gotham,
-    Text = "Universal tool swing. Auto-detects swing remotes.",
+    Text = "Automatically fires the BatHitRequest remote.",
     TextSize = 11,
     TextColor3 = Theme.Sub,
     TextXAlignment = Enum.TextXAlignment.Left,
@@ -466,8 +400,8 @@ local statusLabel = new("TextLabel", {
 }, mainPage)
 
 local function updateStatus()
-    if Config.FastSwing then
-        statusLabel.Text = string.format("Status: swinging every %d ms", math.floor(Config.SwingDelay * 1000 + 0.5))
+    if Config.AutoBat then
+        statusLabel.Text = string.format("Status: swinging every %d ms", math.floor(Config.BatDelay * 1000 + 0.5))
         statusLabel.TextColor3 = Theme.Good
     else
         statusLabel.Text = "Status: idle"
@@ -475,16 +409,15 @@ local function updateStatus()
     end
 end
 
-local swingToggle = createToggle(mainPage, "Fast Pickaxe Swing", Config.FastSwing, 2, function(v)
-    Config.FastSwing = v
-    if v then refreshRemoteCache() end
+local batToggle = createToggle(mainPage, "Auto Swing Bat", Config.AutoBat, 2, function(v)
+    Config.AutoBat = v
     updateStatus()
 end)
 
-local delaySlider = createSlider(mainPage, "Swing Delay", 0.01, 0.30, Config.SwingDelay, 4,
+local delaySlider = createSlider(mainPage, "Bat Swing Delay", 0.1, 1.5, Config.BatDelay, 4,
     function(v) return string.format("%d ms", math.floor(v * 1000 + 0.5)) end,
     function(v)
-        Config.SwingDelay = v
+        Config.BatDelay = v
         updateStatus()
     end
 )
@@ -578,8 +511,8 @@ new("UIStroke", { Color = Theme.Stroke, Thickness = 1 }, resetBtn)
 
 resetBtn.MouseButton1Click:Connect(function()
     Config = table.clone(DEFAULTS)
-    swingToggle.Set(Config.FastSwing)
-    delaySlider.Set(Config.SwingDelay)
+    batToggle.Set(Config.AutoBat)
+    delaySlider.Set(Config.BatDelay)
     transparencySlider.Set(Config.UITransparency)
     main.GroupTransparency = Config.UITransparency
     setKeybind(Config.Keybind)
@@ -660,12 +593,11 @@ closeBtn.MouseButton1Click:Connect(function()
 end)
 
 --==============================================================
--- KEYBIND LISTENER (Left Alt to toggle, rebindable)
+-- KEYBIND LISTENER
 --==============================================================
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
 
-    -- rebinding mode
     if rebinding then
         if input.KeyCode ~= Enum.KeyCode.Unknown then
             setKeybind(input.KeyCode)
@@ -680,21 +612,16 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 end)
 
 --==============================================================
--- SWING LOOP (single loop, checks Config each tick)
+-- BAT SWING LOOP (Uses BatHitRequest)
 --==============================================================
 task.spawn(function()
-    local lastCacheRefresh = 0
     while true do
-        local now = os.clock()
-
-        if Config.FastSwing then
-            -- Re-scan for remotes every 3s in case the game loaded them late
-            if now - lastCacheRefresh > 3 then
-                refreshRemoteCache()
-                lastCacheRefresh = now
-            end
-            swingOnce()
-            task.wait(Config.SwingDelay)
+        if Config.AutoBat and BatHitRequest then
+            -- Fire the remote with nil, exactly as the decompiled calling code showed
+            pcall(function() 
+                BatHitRequest:FireServer(nil) 
+            end)
+            task.wait(Config.BatDelay)
         else
             task.wait(0.1)
         end
@@ -702,4 +629,4 @@ task.spawn(function()
 end)
 
 updateStatus()
-print("[Venace] Universal Pickaxe Hub loaded. Press LEFT ALT to toggle.")
+print("[Venace] Bat Edition Hub loaded. Press LEFT ALT to toggle.")
