@@ -1,6 +1,8 @@
 --==============================================================
---   VENACE HUB  •  Pickaxe Edition
+--   VENACE HUB  •  Pickaxe Edition  (UNIVERSAL)
 --   Toggle UI : LEFT ALT (rebindable in Settings)
+--   Works in every game: uses Tool:Activate() + common
+--   swing remote names. No game-specific dependencies.
 --==============================================================
 
 local Players           = game:GetService("Players")
@@ -10,11 +12,6 @@ local TweenService      = game:GetService("TweenService")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
-
-local SwingEvent = ReplicatedStorage:WaitForChild("MasteryPickaxeSwing", 10)
-if not SwingEvent then
-    warn("[Venace] MasteryPickaxeSwing not found in ReplicatedStorage!")
-end
 
 --==============================================================
 -- CONFIG
@@ -38,6 +35,70 @@ local Theme = {
     Sub     = Color3.fromRGB(148, 148, 168),
     Good    = Color3.fromRGB(74, 222, 128),
 }
+
+--==============================================================
+-- UNIVERSAL SWING ENGINE
+-- Tries every common way to swing a tool so the script works
+-- across unrelated games without any game-specific setup.
+--==============================================================
+local CommonSwingRemotes = {
+    -- original (Mastery / pickaxe games)
+    "MasteryPickaxeSwing",
+    "PickaxeSwing",
+    "SwingPickaxe",
+    "PickaxeActivate",
+    "ActivatePickaxe",
+    "UsePickaxe",
+    "MinePickaxe",
+    -- generic
+    "Swing",
+    "Mine",
+    "Mining",
+    "Hit",
+    "UseTool",
+    "ToolActivate",
+}
+
+local cachedRemotes = {}
+local function refreshRemoteCache()
+    cachedRemotes = {}
+    for _, name in ipairs(CommonSwingRemotes) do
+        local found = ReplicatedStorage:FindFirstChild(name, true)
+        if found and found:IsA("RemoteEvent") then
+            table.insert(cachedRemotes, found)
+        end
+    end
+end
+refreshRemoteCache()
+
+local function getEquippedTool()
+    local char = LocalPlayer.Character
+    if not char then return nil end
+    return char:FindFirstChildOfClass("Tool")
+end
+
+local function swingOnce()
+    local tool = getEquippedTool()
+    if tool then
+        -- Primary universal path: native tool activation
+        -- (fires Tool.Activated, which all standard tools listen to)
+        pcall(function() tool:Activate() end)
+
+        -- If the tool has its own swing remote, fire it too
+        for _, d in ipairs(tool:GetDescendants()) do
+            if d:IsA("RemoteEvent") then
+                pcall(function() d:FireServer() end)
+            end
+        end
+    end
+
+    -- Known common swing remotes found anywhere in ReplicatedStorage
+    for _, remote in ipairs(cachedRemotes) do
+        if remote and remote.Parent then
+            pcall(function() remote:FireServer() end)
+        end
+    end
+end
 
 --==============================================================
 -- HELPERS
@@ -108,7 +169,7 @@ new("TextLabel", {
     Size = UDim2.new(1, -120, 0, 12),
     BackgroundTransparency = 1,
     Font = Enum.Font.Gotham,
-    Text = "pickaxe edition",
+    Text = "pickaxe edition  •  universal",
     TextSize = 10,
     TextColor3 = Theme.Sub,
     TextXAlignment = Enum.TextXAlignment.Left,
@@ -182,7 +243,6 @@ end
 
 local mainPage    = createPage(1)
 local settingsPage = createPage(2)
-
 local pages = { mainPage, settingsPage }
 
 --==============================================================
@@ -378,7 +438,7 @@ new("TextLabel", {
     Size = UDim2.new(1, -24, 0, 16),
     BackgroundTransparency = 1,
     Font = Enum.Font.Gotham,
-    Text = "Spams MasteryPickaxeSwing at your chosen rate.",
+    Text = "Universal tool swing. Auto-detects swing remotes.",
     TextSize = 11,
     TextColor3 = Theme.Sub,
     TextXAlignment = Enum.TextXAlignment.Left,
@@ -408,6 +468,7 @@ end
 
 local swingToggle = createToggle(mainPage, "Fast Pickaxe Swing", Config.FastSwing, 2, function(v)
     Config.FastSwing = v
+    if v then refreshRemoteCache() end
     updateStatus()
 end)
 
@@ -434,7 +495,7 @@ new("TextLabel", {
 }, settingsPage)
 
 local rebinding = false
-local keyLabel -- forward declaration
+local keyLabel
 
 local function setKeybind(key)
     Config.Keybind = key
@@ -570,6 +631,66 @@ local function createTab(text, page, order)
     return entry
 end
 
-createTab("Main", mainPage, 1)
+local mainTab = createTab("Main", mainPage, 1)
 createTab("Settings", settingsPage, 2)
-tabButtons[1].Button:Fire? -- placeholder
+
+-- Activate Main tab by default
+mainTab.Page.Visible = true
+mainTab.Indicator.Visible = true
+mainTab.Label.TextColor3 = Theme.Accent
+mainTab.Button.BackgroundColor3 = Theme.Panel2
+
+--==============================================================
+-- CLOSE BUTTON
+--==============================================================
+local function toggleUI()
+    main.Visible = not main.Visible
+end
+closeBtn.MouseButton1Click:Connect(function()
+    main.Visible = false
+end)
+
+--==============================================================
+-- KEYBIND LISTENER (Left Alt to toggle, rebindable)
+--==============================================================
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+
+    -- rebinding mode
+    if rebinding then
+        if input.KeyCode ~= Enum.KeyCode.Unknown then
+            setKeybind(input.KeyCode)
+            rebinding = false
+        end
+        return
+    end
+
+    if input.KeyCode == Config.Keybind then
+        toggleUI()
+    end
+end)
+
+--==============================================================
+-- SWING LOOP (single loop, checks Config each tick)
+--==============================================================
+task.spawn(function()
+    local lastCacheRefresh = 0
+    while true do
+        local now = os.clock()
+
+        if Config.FastSwing then
+            -- Re-scan for remotes every 3s in case the game loaded them late
+            if now - lastCacheRefresh > 3 then
+                refreshRemoteCache()
+                lastCacheRefresh = now
+            end
+            swingOnce()
+            task.wait(Config.SwingDelay)
+        else
+            task.wait(0.1)
+        end
+    end
+end)
+
+updateStatus()
+print("[Venace] Universal Pickaxe Hub loaded. Press LEFT ALT to toggle.")
