@@ -1,13 +1,13 @@
 --==============================================================
---   VENACE HUB  •  BAT EDITION
+--   VENACE HUB  •  BAT EDITION (MAX SPEED + CHAMS)
 --   Toggle UI : LEFT ALT (rebindable in Settings)
---   Autospams the BatHitRequest RemoteEvent.
 --==============================================================
 
 local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService  = game:GetService("UserInputService")
 local TweenService      = game:GetService("TweenService")
+local RunService        = game:GetService("RunService")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
@@ -15,10 +15,9 @@ local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
 --==============================================================
 -- REMOTE SETUP
 --==============================================================
--- We wait for the remote to ensure the script doesn't error on load
 local BatHitRequest = ReplicatedStorage:WaitForChild("BatHitRequest", 10)
 if not BatHitRequest then
-    warn("[Venace] BatHitRequest not found in ReplicatedStorage! The auto-swing may not work.")
+    warn("[Venace] BatHitRequest not found! The auto-swing will not work.")
 end
 
 --==============================================================
@@ -26,9 +25,12 @@ end
 --==============================================================
 local DEFAULTS = {
     AutoBat        = false,
-    BatDelay       = 0.7,               -- Default to server cooldown to prevent kicks
+    BatDelay       = 0.05,              -- MAX SPEED: 50ms (Change to 0.7 for safety)
+    ChamsEnabled   = false,
+    ChamsColor     = Color3.fromRGB(255, 0, 0), -- Red outline
+    ChamsTransparency = 0.5,
     Keybind        = Enum.KeyCode.LeftAlt,
-    UITransparency = 0,                 -- 0 = solid
+    UITransparency = 0,                 
 }
 local Config = table.clone(DEFAULTS)
 
@@ -42,7 +44,60 @@ local Theme = {
     Text    = Color3.fromRGB(236, 236, 245),
     Sub     = Color3.fromRGB(148, 148, 168),
     Good    = Color3.fromRGB(74, 222, 128),
+    Danger  = Color3.fromRGB(255, 50, 50),
 }
+
+--==============================================================
+-- CHAMS LOGIC
+--==============================================================
+local chamsFolder = Instance.new("Folder")
+chamsFolder.Name = "VenaceChamsFolder"
+chamsFolder.Parent = game:GetService("CoreGui")
+
+local function ApplyChams(character)
+    if not character or not character:FindFirstChild("HumanoidRootPart") then return end
+    
+    local highlight = character:FindFirstChild("VenaceChams")
+    if not highlight then
+        highlight = Instance.new("Highlight")
+        highlight.Name = "VenaceChams"
+        highlight.Parent = character
+    end
+    
+    highlight.FillColor = Config.ChamsColor
+    highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+    highlight.FillTransparency = Config.ChamsTransparency
+    highlight.OutlineTransparency = 0
+end
+
+local function RemoveChams(character)
+    if character then
+        local highlight = character:FindFirstChild("VenaceChams")
+        if highlight then highlight:Destroy() end
+    end
+end
+
+local function UpdateAllChams()
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer then
+            if Config.ChamsEnabled then
+                if plr.Character then ApplyChams(plr.Character) end
+            else
+                if plr.Character then RemoveChams(plr.Character) end
+            end
+        end
+    end
+end
+
+-- Handle Player Respawns / Joins for Chams
+Players.PlayerAdded:Connect(function(plr)
+    plr.CharacterAdded:Connect(function(char)
+        if Config.ChamsEnabled and plr ~= LocalPlayer then
+            task.wait(1) -- Wait for character to fully load
+            ApplyChams(char)
+        end
+    end)
+end)
 
 --==============================================================
 -- HELPERS
@@ -55,7 +110,7 @@ local function new(class, props, parent)
 end
 
 --==============================================================
--- ROOT
+-- ROOT UI
 --==============================================================
 local old = PlayerGui:FindFirstChild("VenaceHub")
 if old then old:Destroy() end
@@ -72,7 +127,7 @@ local main = new("CanvasGroup", {
     Name = "Main",
     AnchorPoint = Vector2.new(0.5, 0.5),
     Position = UDim2.fromScale(0.5, 0.5),
-    Size = UDim2.fromOffset(560, 360),
+    Size = UDim2.fromOffset(560, 380), -- Slightly taller for new features
     BackgroundColor3 = Theme.BG,
     BorderSizePixel = 0,
     ClipsDescendants = true,
@@ -113,7 +168,7 @@ new("TextLabel", {
     Size = UDim2.new(1, -120, 0, 12),
     BackgroundTransparency = 1,
     Font = Enum.Font.Gotham,
-    Text = "bat edition",
+    Text = "bat edition  •  max speed + chams",
     TextSize = 10,
     TextColor3 = Theme.Sub,
     TextXAlignment = Enum.TextXAlignment.Left,
@@ -146,7 +201,7 @@ new("UICorner", { CornerRadius = UDim.new(0, 6) }, closeBtn)
 --==============================================================
 local sidebar = new("Frame", {
     Position = UDim2.new(0, 0, 0, 46),
-    Size = UDim2.fromOffset(150, 314),
+    Size = UDim2.fromOffset(150, 334),
     BackgroundColor3 = Theme.Panel,
     BorderSizePixel = 0,
 }, main)
@@ -364,7 +419,7 @@ local function createSlider(parent, labelText, minV, maxV, defaultV, order, fmt,
 end
 
 --==============================================================
--- MAIN PAGE (BAT)
+-- MAIN PAGE (BAT & CHAMS)
 --==============================================================
 new("TextLabel", {
     Size = UDim2.new(1, -24, 0, 20),
@@ -377,17 +432,6 @@ new("TextLabel", {
     LayoutOrder = 0,
 }, mainPage)
 
-new("TextLabel", {
-    Size = UDim2.new(1, -24, 0, 16),
-    BackgroundTransparency = 1,
-    Font = Enum.Font.Gotham,
-    Text = "Automatically fires the BatHitRequest remote.",
-    TextSize = 11,
-    TextColor3 = Theme.Sub,
-    TextXAlignment = Enum.TextXAlignment.Left,
-    LayoutOrder = 1,
-}, mainPage)
-
 local statusLabel = new("TextLabel", {
     Size = UDim2.new(1, -24, 0, 16),
     BackgroundTransparency = 1,
@@ -396,29 +440,59 @@ local statusLabel = new("TextLabel", {
     TextSize = 11,
     TextColor3 = Theme.Sub,
     TextXAlignment = Enum.TextXAlignment.Left,
-    LayoutOrder = 3,
+    LayoutOrder = 1,
 }, mainPage)
 
 local function updateStatus()
     if Config.AutoBat then
-        statusLabel.Text = string.format("Status: swinging every %d ms", math.floor(Config.BatDelay * 1000 + 0.5))
-        statusLabel.TextColor3 = Theme.Good
+        if Config.BatDelay < 0.7 then
+            statusLabel.Text = string.format("Status: MAX SPEED (%d ms) - WARNING: Low delays may flag", math.floor(Config.BatDelay * 1000 + 0.5))
+            statusLabel.TextColor3 = Theme.Danger
+        else
+            statusLabel.Text = string.format("Status: Safe Swing (%d ms)", math.floor(Config.BatDelay * 1000 + 0.5))
+            statusLabel.TextColor3 = Theme.Good
+        end
     else
         statusLabel.Text = "Status: idle"
         statusLabel.TextColor3 = Theme.Sub
     end
 end
 
-local batToggle = createToggle(mainPage, "Auto Swing Bat", Config.AutoBat, 2, function(v)
+createToggle(mainPage, "Auto Swing Bat", Config.AutoBat, 2, function(v)
     Config.AutoBat = v
     updateStatus()
 end)
 
-local delaySlider = createSlider(mainPage, "Bat Swing Delay", 0.1, 1.5, Config.BatDelay, 4,
+createSlider(mainPage, "Bat Delay (Fast)", 0.01, 1.5, Config.BatDelay, 3,
     function(v) return string.format("%d ms", math.floor(v * 1000 + 0.5)) end,
     function(v)
         Config.BatDelay = v
         updateStatus()
+    end
+)
+
+-- Visuals Section
+new("TextLabel", {
+    Size = UDim2.new(1, -24, 0, 20),
+    BackgroundTransparency = 1,
+    Font = Enum.Font.GothamBold,
+    Text = "Visuals",
+    TextSize = 15,
+    TextColor3 = Theme.Text,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    LayoutOrder = 4,
+}, mainPage)
+
+createToggle(mainPage, "Player Chams (ESP)", Config.ChamsEnabled, 5, function(v)
+    Config.ChamsEnabled = v
+    UpdateAllChams()
+end)
+
+createSlider(mainPage, "Chams Transparency", 0, 1, Config.ChamsTransparency, 6,
+    function(v) return string.format("%d%%", math.floor((1-v) * 100 + 0.5)) end,
+    function(v)
+        Config.ChamsTransparency = v
+        UpdateAllChams()
     end
 )
 
@@ -487,7 +561,7 @@ keyRow.MouseButton1Click:Connect(function()
     keyLabel.TextColor3 = Theme.Sub
 end)
 
-local transparencySlider = createSlider(settingsPage, "UI Transparency", 0, 0.8, Config.UITransparency, 2,
+createSlider(settingsPage, "UI Transparency", 0, 0.8, Config.UITransparency, 2,
     function(v) return string.format("%d%%", math.floor(v * 100 + 0.5)) end,
     function(v)
         Config.UITransparency = v
@@ -511,12 +585,10 @@ new("UIStroke", { Color = Theme.Stroke, Thickness = 1 }, resetBtn)
 
 resetBtn.MouseButton1Click:Connect(function()
     Config = table.clone(DEFAULTS)
-    batToggle.Set(Config.AutoBat)
-    delaySlider.Set(Config.BatDelay)
-    transparencySlider.Set(Config.UITransparency)
     main.GroupTransparency = Config.UITransparency
     setKeybind(Config.Keybind)
     updateStatus()
+    UpdateAllChams()
 end)
 
 --==============================================================
@@ -612,15 +684,16 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 end)
 
 --==============================================================
--- BAT SWING LOOP (Uses BatHitRequest)
+-- FAST BAT SWING LOOP
 --==============================================================
 task.spawn(function()
     while true do
         if Config.AutoBat and BatHitRequest then
-            -- Fire the remote with nil, exactly as the decompiled calling code showed
             pcall(function() 
                 BatHitRequest:FireServer(nil) 
             end)
+            
+            -- Using task.wait with a very small number allows for rapid firing
             task.wait(Config.BatDelay)
         else
             task.wait(0.1)
@@ -628,5 +701,10 @@ task.spawn(function()
     end
 end)
 
+-- Handle players leaving to remove chams
+Players.PlayerRemoving:Connect(function(plr)
+    if plr.Character then RemoveChams(plr.Character) end
+end)
+
 updateStatus()
-print("[Venace] Bat Edition Hub loaded. Press LEFT ALT to toggle.")
+print("[Venace] Bat Edition + Chams Loaded. Press LEFT ALT to toggle.")
