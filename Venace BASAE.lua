@@ -64,11 +64,14 @@ local function refreshRemoteCache()
     cachedRemotes = {}
     for _, name in ipairs(CommonSwingRemotes) do
         local found = ReplicatedStorage:FindFirstChild(name, true)
-        if found and found:IsA("RemoteEvent") then
+        if found and (found:IsA("RemoteEvent") or found:IsA("RemoteFunction")) then
             table.insert(cachedRemotes, found)
         end
     end
 end
+
+-- Wait a moment for the game to load before caching
+task.wait(1)
 refreshRemoteCache()
 
 local function getEquippedTool()
@@ -79,23 +82,29 @@ end
 
 local function swingOnce()
     local tool = getEquippedTool()
+    
     if tool then
-        -- Primary universal path: native tool activation
-        -- (fires Tool.Activated, which all standard tools listen to)
+        -- 1. Native tool activation (fires Tool.Activated)
         pcall(function() tool:Activate() end)
 
-        -- If the tool has its own swing remote, fire it too
+        -- 2. Look for remotes inside the tool itself
         for _, d in ipairs(tool:GetDescendants()) do
             if d:IsA("RemoteEvent") then
                 pcall(function() d:FireServer() end)
+            elseif d:IsA("RemoteFunction") then
+                pcall(function() d:InvokeServer() end)
             end
         end
     end
 
-    -- Known common swing remotes found anywhere in ReplicatedStorage
+    -- 3. Fire known common swing remotes found in ReplicatedStorage
     for _, remote in ipairs(cachedRemotes) do
         if remote and remote.Parent then
-            pcall(function() remote:FireServer() end)
+            if remote:IsA("RemoteEvent") then
+                pcall(function() remote:FireServer() end)
+            elseif remote:IsA("RemoteFunction") then
+                pcall(function() remote:InvokeServer() end)
+            end
         end
     end
 end
